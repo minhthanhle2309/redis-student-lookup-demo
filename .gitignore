@@ -153,6 +153,8 @@ activemq-data/
 .env
 .envrc
 .venv
+.pytest_cache/
+data/
 env/
 venv/
 ENV/
