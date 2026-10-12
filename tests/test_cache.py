@@ -1,6 +1,7 @@
 import json
+import time
 
-from src.cache import StudentService, benchmark, cache_key
+from src.cache import StudentService, cache_key
 
 
 class FakeDatabase:
@@ -29,16 +30,26 @@ class FakeRedis:
     def __init__(self):
         self.values = {}
         self.ttls = {}
+        self.expiry = {}
+        self.now = time.monotonic()
 
     def get(self, key):
+        if key in self.expiry and self.expiry[key] <= self.now:
+            self.delete(key)
         return self.values.get(key)
 
     def setex(self, key, ttl, value):
         self.ttls[key] = ttl
         self.values[key] = value
+        self.expiry[key] = self.now + ttl
 
     def delete(self, key):
-        self.values.pop(key, None)
+        return int(self.values.pop(key, None) is not None)
+
+    def ttl(self, key):
+        if self.get(key) is None:
+            return -2
+        return int(self.expiry[key] - self.now)
 
 
 def make_service():
@@ -52,6 +63,8 @@ def test_cache_miss_then_hit_and_ttl():
     assert status == "MISS" and student["name"] == "An"
     assert client.ttls[cache_key("SV001")] == 42
     assert service.get_student("SV001")[1] == "HIT"
+    client.now += 43
+    assert service.get_student("SV001")[1] == "MISS"
 
 
 def test_missing_student_is_not_cached():
@@ -78,7 +91,42 @@ def test_add_invalidates_cache_key():
     assert cache_key("SV002") not in client.values
 
 
-def test_benchmark_returns_non_negative_milliseconds():
-    db, _, service = make_service()
-    direct, cached = benchmark(db, service, "SV001", repetitions=3)
-    assert direct >= 0 and cached >= 0
+def test_lookup_exposes_key_and_remaining_ttl():
+    _, client, service = make_service()
+    service.get_student("SV001")
+    student, status = service.get_student("SV001")
+    assert student["student_id"] == "SV001"
+    assert status == "HIT"
+    assert {key: service.last_lookup[key] for key in ("student_id", "key", "status", "ttl")} == {
+        "student_id": "SV001", "key": "student:SV001", "status": "HIT", "ttl": 42}
+
+
+def test_redis_read_failure_falls_back_without_claiming_hit():
+    import redis
+
+    db, client, service = make_service()
+    client.get = lambda _key: (_ for _ in ()).throw(redis.ConnectionError("offline"))
+    student, status = service.get_student("SV001")
+    assert student == db.students["SV001"]
+    assert status == "BYPASS"
+    assert service.last_lookup["status"] == "BYPASS"
+
+
+def test_ttl_read_failure_does_not_turn_a_real_cache_hit_into_miss():
+    import redis
+
+    _, client, service = make_service()
+    service.get_student("SV001")
+    client.ttl = lambda _key: (_ for _ in ()).throw(redis.ConnectionError("offline"))
+    student, status = service.get_student("SV001")
+    assert status == "HIT" and student["student_id"] == "SV001"
+    assert service.last_lookup["source"] == "Redis"
+    assert service.last_lookup["ttl_status"] == "unavailable"
+
+
+def test_malformed_cached_value_is_not_reported_as_hit():
+    _, client, service = make_service()
+    client.values[cache_key("SV001")] = json.dumps({"student_id": "SV999"})
+    student, status = service.get_student("SV001")
+    assert status == "MISS" and student["student_id"] == "SV001"
+    assert any(event["stage"] == "cache_invalid" for event in service.last_lookup["events"])
