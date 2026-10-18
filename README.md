@@ -110,6 +110,37 @@ python -m scripts.benchmark --dataset-size 5000 --queries 1000 --repetitions 5 -
 
 Báo cáo gồm trung bình, median/p50, p95, tổng thời gian, throughput và bộ đếm HIT/MISS. Tổng thời gian là tổng các khoảng tra cứu được bấm giờ; chuẩn bị database, xóa khóa để tạo cold cache, làm nóng cache và overhead vòng lặp không tính vào đó. Đây là phép đo local một tiến trình; hiệu năng tùy dữ liệu, tải nền, cache hệ điều hành, serialization và vị trí Redis. Redis không phải lúc nào cũng nhanh hơn SQLite. Benchmark chỉ xóa khóa có prefix `seminar:benchmark:student:`; không dùng `FLUSHDB` hay `FLUSHALL`.
 
+## Cache Performance Lab: NO CACHE, Redis và Memcached
+
+Hướng dẫn đầy đủ ở [docs/cache-performance-lab.md](docs/cache-performance-lab.md).
+
+Lab riêng này so sánh xử lý trực tiếp với cache kết quả ở Redis và Memcached. Payload xác định có cỡ mặc định 1 KB, 100 KB, 1 MB, 5 MB và 10 MB. Mỗi lượt thực hiện nhiều vòng SHA-256 thật trên payload; cache chỉ giữ digest 32 byte. Đây là workload CPU-bound để thấy lợi ích khi HIT bỏ qua xử lý, không phải khẳng định cache luôn nhanh hơn hay mô phỏng mọi ứng dụng.
+
+Thêm service Memcached vào Compose rồi cài dependencies:
+
+```powershell
+docker compose up -d redis memcached
+docker compose ps
+python -m pip install -r requirements.txt
+```
+
+Chạy so sánh đủ ba mode trên toàn bộ cỡ payload:
+
+```powershell
+python -m scripts.cache_performance --runs 5 --rounds 3
+```
+
+Có thể chọn một backend/cỡ payload, số lượt và lượng công việc CPU:
+
+```powershell
+python -m scripts.cache_performance --mode redis --sizes 100KB,1MB --runs 10 --rounds 5
+python -m scripts.cache_performance --mode memcached --sizes 1MB,10MB --runs 5 --rounds 3
+python -m scripts.cache_performance --mode no-cache --sizes 1KB,10MB --runs 5 --rounds 3
+```
+
+Mỗi cỡ chạy cùng payload và cùng số lượt. Kết nối được làm nóng ngoài phép đo; từng cache xóa đúng key thuộc namespace riêng trước khi chạy, vì vậy lượt cache đầu tiên là MISS và các lượt kế tiếp có thể là HIT. Không xóa toàn bộ Redis/Memcached. Báo cáo số đo thực được ghi riêng vào `benchmark-results/cache-performance.csv` và `benchmark-results/cache-performance.md`, gồm avg, p50, p95, min/max, throughput, HIT/MISS, hit rate và speedup so với NO CACHE. Payload, tạo key và một lượt xử lý làm nóng không tính giờ; GET, xử lý khi MISS và SET được tính. Kết quả là phép đo local một tiến trình, chịu ảnh hưởng của máy, tải nền, kết nối và cấu hình backend.
+
+`--mode` nhận `all`, `no-cache`, `redis` hoặc `memcached`. Chế độ cache đơn lẻ vẫn xuất NO CACHE cùng với backend đã chọn để speedup có mốc so sánh. Mặc định yêu cầu cả hai service có thể kết nối được.
 ## Kiểm tra và kết thúc
 
 Chạy unit tests không cần Redis:

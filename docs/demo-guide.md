@@ -1,4 +1,4 @@
-# Kịch bản seminar (5–7 phút)
+# Kịch bản seminar (10–15 phút)
 
 ## 0:00–0:45 — Bài toán
 
@@ -14,13 +14,17 @@ Chọn **7**. Demo đặt TTL 3 giây, chờ 4 giây rồi tra cứu lại. Lầ
 
 ## 2:30–3:30 — Invalidation
 
-Chọn **2**, tra `SV001` để tạo cache. Chọn **4** và cập nhật tên hoặc ngành. Tra lại bằng **2**: cache cũ đã bị xóa, kết quả mới được lấy từ SQLite (MISS). Xóa bằng **5** cũng xóa khóa cache liên quan.
+Chọn **2**, tra `SV001` để tạo cache. Chọn **4** và cập nhật tên hoặc ngành. Tra lại bằng **2**: cache cũ đã bị xóa, kết quả mới được lấy từ SQLite (MISS). Xóa bằng **5** cũng xóa khóa cache liên quan. Mỗi lookup hiện MSSV, trạng thái, Redis key và TTL còn lại.
 
 ## 3:30–5:00 — Benchmark
 
-Chọn **8** với MSSV tồn tại. Chương trình đo trung bình 1.000 lần đọc SQLite trực tiếp và 1.000 lần đọc qua đường cache Redis bằng `time.perf_counter()`. Kết quả có thể chênh rất ít hoặc SQLite nhanh hơn do dữ liệu nhỏ, Redis chạy local và có overhead mạng/serialization. Đây không phải kết luận cho tải lớn.
+Chạy `python -m scripts.benchmark --dataset-size 1000 --queries 500 --repetitions 3`. Script dùng database benchmark riêng và so sánh SQLite trực tiếp, Redis cold-cache, Redis warm-cache trên cùng workload. Báo cáo CSV/Markdown gồm avg, median/p50, p95, tổng thời gian, throughput và HIT/MISS. Kết quả có thể chênh rất ít hoặc SQLite nhanh hơn do dữ liệu nhỏ, Redis chạy local và có overhead mạng/serialization. Đây không phải kết luận cho tải lớn. Lựa chọn **8** trong CLI in lệnh benchmark chi tiết.
 
-## 5:00–6:00 — Kết luận và giới hạn
+## 5:00–8:00 — Session trên Redis
+
+Chạy `python -m src.session_demo`, mở `http://127.0.0.1:5000`, đăng nhập `demo` / `redis123`. Xem trạng thái và TTL, truy cập route được bảo vệ, đăng xuất rồi thử lại. Có thể đặt `SESSION_TTL_SECONDS=45` để chờ hết hạn trong buổi trình bày. Session nằm phía server trong Redis; cookie chỉ mang session ID. Demo HTTP local không mã hóa đường truyền.
+
+## 8:00–10:00 — Kết luận và giới hạn
 
 Cache hữu ích khi dữ liệu được đọc lặp lại, nhưng cần TTL và invalidation để giảm nguy cơ dữ liệu cũ. Demo dùng một tiến trình và một máy; chưa mô phỏng tải đồng thời, cache eviction, hoặc lỗi ghi giữa SQLite và Redis.
 
